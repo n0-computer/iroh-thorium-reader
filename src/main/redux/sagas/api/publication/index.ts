@@ -12,7 +12,7 @@ import { exportPublication } from "./export";
 import { findAll } from "./findAll";
 import { findByTag } from "./findByTag";
 import { getPublication } from "./getPublication";
-import { importFromFs, importFromLink, importFromString } from "./import";
+import { importFromFs, importFromIroh, importFromLink, importFromString } from "./import";
 import { search, searchEqTitle } from "./search";
 import { updateTags } from "./updateTags";
 import { SagaGenerator } from "typed-redux-saga";
@@ -25,6 +25,7 @@ export const publicationApi: IPublicationApi = {
     search,
     exportPublication,
     importFromFs,
+    importFromIroh,
     importFromLink,
     importFromString,
     searchEqTitle,

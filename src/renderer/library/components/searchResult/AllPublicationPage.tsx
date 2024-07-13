@@ -164,6 +164,7 @@ export class AllPublicationPage extends React.Component<IProps, IState> {
 
         this.unsubscribe = apiSubscribe([
             "publication/importFromFs",
+            "publication/importFromIroh",
             "publication/delete",
             "publication/importFromLink",
             // "catalog/addEntry",
@@ -1958,11 +1959,11 @@ export const TableView: React.FC<ITableCellProps_TableView & ITableCellProps_Com
                 if (!bodyWidth) {
                     return;
                 }
-                
+
                 const coverWidth = 205;
                 const col = Math.floor(bodyWidth/coverWidth);
                 const nbItemMissing = col - PAGESIZE%col;
-                
+
                 tableInstance.setPageSize(PAGESIZE+nbItemMissing);
             } else {
                 tableInstance.setPageSize(PAGESIZE);
@@ -1973,7 +1974,7 @@ export const TableView: React.FC<ITableCellProps_TableView & ITableCellProps_Com
         const cdDebounce = debounce(cb, 500);
 
         window.addEventListener("resize", cdDebounce);
-        
+
         return () => {
             window.removeEventListener("resize", cdDebounce);
         };
@@ -2053,7 +2054,7 @@ export const TableView: React.FC<ITableCellProps_TableView & ITableCellProps_Com
                                     if (currentShow && !show) {
                                         for (const col of tableInstance.allColumns) {
                                             tableInstance.setFilter(col.id, "");
-                                            
+
                                         }
                                     }
                                 }, 200);
@@ -2408,7 +2409,7 @@ export const TableView: React.FC<ITableCellProps_TableView & ITableCellProps_Com
                                 console.log("####");
                                 return (<tr key={index}></tr>);
                             }
-                        
+
                             return (
                                 displayType === DisplayType.Grid ?
                                     <tr key={index}>

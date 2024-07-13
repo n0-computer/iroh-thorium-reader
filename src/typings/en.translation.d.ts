@@ -344,6 +344,7 @@ declare namespace typed_i18n {
   readonly "home": string,
   readonly "homeTitle": string,
   readonly "importTitle": string,
+  readonly "downloadTitle": string,
   readonly "listTitle": string,
   readonly "myCatalogs": string,
   readonly "refreshTitle": string,
@@ -360,6 +361,7 @@ declare namespace typed_i18n {
   (_: "header.home", __?: {}): string;
   (_: "header.homeTitle", __?: {}): string;
   (_: "header.importTitle", __?: {}): string;
+  (_: "header.downloadTitle", __?: {}): string;
   (_: "header.listTitle", __?: {}): string;
   (_: "header.myCatalogs", __?: {}): string;
   (_: "header.refreshTitle", __?: {}): string;

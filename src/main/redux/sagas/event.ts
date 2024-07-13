@@ -21,7 +21,7 @@ import { opdsApi } from "./api";
 import { browse } from "./api/browser/browse";
 import { addFeed } from "./api/opds/feed";
 
-import { importFromFs, importFromLink } from "./api/publication/import";
+import { importFromFs, importFromIroh, importFromLink } from "./api/publication/import";
 import { search } from "./api/publication/search";
 import { appActivate } from "./win/library";
 
@@ -53,6 +53,34 @@ export function saga() {
                 } catch (e) {
 
                     debug("ERROR to importFromFs and to open the publication");
+                    debug(e);
+                }
+            }
+
+        }),
+        spawn(function*() {
+          // TODO: read string
+            const chan = getOpenFileFromCliChannel();
+
+            while (true) {
+
+                try {
+                    const ticket = yield* takeTyped(chan);
+
+                    const pubViewArray = yield* callTyped(importFromIroh, ticket);
+                    const pubView = Array.isArray(pubViewArray) ? pubViewArray[0] : pubViewArray;
+                    if (pubView) {
+
+                        yield* callTyped(appActivate);
+                        yield put(readerActions.openRequest.build(pubView.identifier));
+                        yield put(readerActions.detachModeRequest.build());
+
+
+                    }
+
+                } catch (e) {
+
+                    debug("ERROR to importFromIroh and to open the publication");
                     debug(e);
                 }
             }

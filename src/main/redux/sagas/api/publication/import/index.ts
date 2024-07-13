@@ -17,6 +17,7 @@ import { SagaGenerator } from "typed-redux-saga";
 import { all as allTyped, call as callTyped } from "typed-redux-saga/macro";
 
 import { importFromFsService } from "./importFromFs";
+import { importFromIrohService } from "./importFromIroh";
 import { importFromLinkService } from "./importFromLink";
 import { importFromStringService } from "./importFromString";
 import { PublicationDocument } from "readium-desktop/main/db/document/publication";
@@ -172,6 +173,83 @@ export function* importFromFs(
                             ToastType.Error,
                             translate("message.import.fail",
                                 { path: filePath, err: error?.toString() }),
+                        ),
+                    );
+                }
+
+                return undefined;
+            }),
+    );
+
+    const pubView = yield* allTyped(effects);
+    const ret = pubView.filter((v) => v);
+
+    return ret;
+}
+
+
+export function* importFromIroh(
+  ticket: string,
+): SagaGenerator<PublicationView[] | undefined> {
+
+    const ticketArray = [ticket];
+
+    const publicationViewConverter = diMainGet("publication-view-converter");
+
+    const effects = ticketArray.map(
+        (ticket: string) =>
+            callTyped(function*(): SagaGenerator<PublicationView> {
+
+                const translate = diMainGet("translator").translate;
+
+                try {
+
+                    // const { b: [publicationDocument, alreadyImported] } = yield* raceTyped({
+                    //     a: delay(30000),
+                    //     b: callTyped(importFromIrohService, ticket),
+                    // });
+                    const data = yield* callTyped(importFromIrohService, ticket);
+                    if (!data) {
+                        throw new Error("importFromIrohService undefined");
+                    }
+                    const [publicationDocument, alreadyImported] = data;
+
+                    if (!publicationDocument) {
+                        throw new Error("publicationDocument not imported on db");
+                    }
+
+                    const publicationView = yield* callTyped(() => convertDoc(publicationDocument, publicationViewConverter));
+
+                    if (alreadyImported) {
+                        yield put(
+                            toastActions.openRequest.build(
+                                ToastType.Success,
+                                translate("message.import.alreadyImport",
+                                    { title: publicationView.documentTitle }),
+                            ),
+                        );
+
+                    } else {
+                        yield put(
+                            toastActions.openRequest.build(
+                                ToastType.Success,
+                                translate("message.import.success",
+                                    { title: publicationView.documentTitle }),
+                            ),
+                        );
+
+                    }
+
+                    return publicationView;
+
+                } catch (error) {
+
+                    debug("importFromIroh (hash + import) fail with :" + ticket, error);
+                    yield put(
+                        toastActions.openRequest.build(
+                            ToastType.Error,
+                            translate("message.import.fail",
+                                { path: ticket, err: error?.toString() }),
                         ),
                     );
                 }

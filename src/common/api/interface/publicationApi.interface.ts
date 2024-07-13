@@ -39,6 +39,9 @@ export interface IPublicationApi {
     importFromFs: (
         filePathArray: string | string[],
     ) => SagaGenerator<PublicationView[]>;
+    importFromIroh: (
+        ticket: string,
+    ) => SagaGenerator<PublicationView[]>;
     search: (
         title: string,
     ) => SagaGenerator<PublicationView[]>;
@@ -61,6 +64,7 @@ export interface IPublicationModuleApi {
     "publication/importFromLink": IPublicationApi["importFromLink"];
     "publication/importFromFs": IPublicationApi["importFromFs"];
     "publication/importFromString": IPublicationApi["importFromString"];
+    "publication/importFromIroh": IPublicationApi["importFromIroh"];
     "publication/search": IPublicationApi["search"];
     "publication/searchEqTitle": IPublicationApi["searchEqTitle"];
     "publication/exportPublication": IPublicationApi["exportPublication"];

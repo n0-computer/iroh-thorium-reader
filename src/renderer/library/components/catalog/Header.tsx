@@ -24,6 +24,7 @@ import { ILibraryRootState } from "readium-desktop/common/redux/states/renderer/
 import { DisplayType, IRouterLocationState } from "readium-desktop/renderer/library/routing";
 
 import PublicationAddButton from "./PublicationAddButton";
+import PublicationDownloadButton from "./PublicationDownloadButton";
 
 // import SearchForm from "./SearchForm";
 
@@ -94,6 +95,7 @@ class Header extends React.Component<IProps, undefined> {
                 </div>
                     <div style={{textAlign: "right", display: "flex", gap: "10px", position: "relative"}}>
                     <PublicationAddButton />
+                    <PublicationDownloadButton />
                     {/* {
                     window.location.hash.indexOf("search") === -1
                     ?
