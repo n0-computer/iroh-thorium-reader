@@ -81,7 +81,7 @@ export class PublicationDownloadButton extends React.Component<IProps, {ticket: 
   }
 
   private handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    alert('A ticket was submitted: ' + this.state.ticket);
+    // alert('A ticket was submitted: ' + this.state.ticket);
     event.preventDefault();
     this.props.import(this.state.ticket);
   }

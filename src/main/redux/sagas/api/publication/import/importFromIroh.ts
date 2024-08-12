@@ -13,6 +13,8 @@ import { call as callTyped, race as raceTyped } from "typed-redux-saga/macro";
 
 import { importFromFsService } from "./importFromFs";
 import { Iroh, BlobTicket } from "@number0/iroh";
+import { sharedIrohFetch } from "readium-desktop/main/irohFetch";
+import { writeFileSync } from "fs";
 
 // Logger
 const debug = debug_("readium-desktop:main#saga/api/publication/importFromLinkService");
@@ -67,10 +69,24 @@ function* importLinkFromPath(
 export function* importFromIrohService(
   ticketString: string,
 ): SagaGenerator<[publicationDocument: PublicationDocument | undefined, alreadyImported: boolean]> {
+    if (ticketString.startsWith("http")) {
+        debug("fetching URL:", ticketString);
+        const res = yield* callTyped(() => sharedIrohFetch.fetch(ticketString));
+        if (!res) {
+            debug("fetch failed");
+            return [undefined, false];
+        }
+        
+        const body = yield* callTyped(() => res.arrayBuffer());
+        const destination = `/tmp/book.epub`;
+        writeFileSync(destination, Buffer.from(body));
+        return yield* callTyped(importLinkFromPath, destination);
+    }
+
     debug("importing ticket", ticketString);
     const ticket = BlobTicket.fromString(ticketString)
     if (!ticket.hash || !ticket.nodeAddr.nodeId) {
-        debug("invalid ticket");
+        debug("invalid ticket, assuming it's a regular URL", ticketString);
         return [undefined, false];
     }
 

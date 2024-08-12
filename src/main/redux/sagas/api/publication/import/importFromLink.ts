@@ -6,7 +6,7 @@
 // ==LICENSE-END==
 
 import * as debug_ from "debug";
-import nodeFetch from "node-fetch";
+// import nodeFetch from "node-fetch";
 import { IOpdsLinkView, IOpdsPublicationView } from "readium-desktop/common/views/opds";
 import { PublicationDocument } from "readium-desktop/main/db/document/publication";
 import { diMainGet } from "readium-desktop/main/di";
@@ -17,6 +17,7 @@ import { call as callTyped, race as raceTyped } from "typed-redux-saga/macro";
 import { downloader } from "../../../downloader";
 import { packageFromLink } from "../packager/packageLink";
 import { importFromFsService } from "./importFromFs";
+import { sharedIrohFetch } from "readium-desktop/main/irohFetch";
 
 // Logger
 const debug = debug_("readium-desktop:main#saga/api/publication/importFromLinkService");
@@ -86,7 +87,8 @@ export function* importFromLinkService(
 
     if (!link.type) {
         try {
-            const response = yield* callTyped(() => nodeFetch(url.toString()));
+            const response = yield* callTyped(() => sharedIrohFetch.fetch(url.toString()));
+            // const response = yield* callTyped(() => nodeFetch(url.toString()));
             const contentType = response?.headers?.get("Content-Type");
             if (contentType) {
                 link.type = contentType;
