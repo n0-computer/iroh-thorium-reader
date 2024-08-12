@@ -12,7 +12,7 @@ import { delay, SagaGenerator } from "typed-redux-saga";
 import { call as callTyped, race as raceTyped } from "typed-redux-saga/macro";
 
 import { importFromFsService } from "./importFromFs";
-import { execSync } from "node:child_process";
+import { Iroh, BlobTicket } from "@number0/iroh";
 
 // Logger
 const debug = debug_("readium-desktop:main#saga/api/publication/importFromLinkService");
@@ -65,21 +65,57 @@ function* importLinkFromPath(
 }
 
 export function* importFromIrohService(
-  ticket: string,
+  ticketString: string,
 ): SagaGenerator<[publicationDocument: PublicationDocument | undefined, alreadyImported: boolean]> {
-  debug("importing ticket", ticket);
-  const command = `/Users/dignifiedquire/rust_target/debug/sendme receive ${ticket}`;
-  const res = execSync(command);
-  const out = res.toString();
-   const regex = /downloading\sto:\s([^;]+)/i;
-    const fileOrPackagePath = out.match(regex)[1];
-    debug(res, fileOrPackagePath)
-
-    if (fileOrPackagePath) {
-        return yield* callTyped(importLinkFromPath, fileOrPackagePath);
-    } else {
-        debug("downloaded file path or package path is empty");
+    debug("importing ticket", ticketString);
+    const ticket = BlobTicket.fromString(ticketString)
+    if (!ticket.hash || !ticket.nodeAddr.nodeId) {
+        debug("invalid ticket");
+        return [undefined, false];
     }
 
-    return [undefined, false];
+    const fileOrPackagePath = yield* callTyped(fetchIroh, ticket);
+    if (!fileOrPackagePath) {
+        debug("downloaded file path or package path is empty");
+        return [undefined, false];
+    }
+    debug("fetched to", fileOrPackagePath)
+    return yield* callTyped(importLinkFromPath, fileOrPackagePath);
+}
+
+async function fetchIroh(ticket: BlobTicket): Promise<string> {
+    const node = await Iroh.memory();
+    let fileOrPackagePath = "";
+    debug("downloading", ticket.hash, ticket.asDownloadOptions());
+    await node.blobs.download(ticket.hash, ticket.asDownloadOptions(), async (err, progress) => {
+        if (err) {
+            debug("download error", err);
+            return;
+        }
+        debug("download progress", progress);
+    });
+
+    const destination = `/tmp/${ticket.hash}`;
+    const blobExportFormat = (ticket.format === "HashSeq") ? "Collection": "Blob";
+    try {
+        debug("exporting", ticket.hash, blobExportFormat, destination)
+        await node.blobs.export(ticket.hash, destination, blobExportFormat, "TryReference")
+    } catch (e) {
+        debug(`error exporting: ${e}`)
+    }
+
+    switch (ticket.format) {
+        case "HashSeq":
+            const collection = await node.blobs.getCollection(ticket.hash)
+            fileOrPackagePath = `${destination}/${collection.names()[0]}`
+            break;
+        case "Blob":
+            fileOrPackagePath = destination;
+            break;
+        default:
+            debug("invalid ticket format", ticket.format);
+    }
+
+    debug("package path:", fileOrPackagePath)
+    return fileOrPackagePath;
 }
