@@ -2,7 +2,7 @@ import { app } from 'electron';
 import { mkdirSync } from "fs";
 import * as debug_ from "debug";
 import fetch, { Response, ResponseInit } from "node-fetch";
-import { AuthorId, BlobDownloadOptions, Doc, DownloadPolicy, Iroh, LiveEvent, Query, SetTagOption } from "@number0/iroh";
+import { AuthorId, BlobDownloadOptions, Doc, DocTicket, DownloadPolicy, Iroh, LiveEvent, Query, SetTagOption } from "@number0/iroh";
 
 import { metrics } from "./metrics";
 
@@ -31,11 +31,12 @@ export class IrohFetch {
     constructor(docTicket: string, options: IrohFetchOptions = defaultOptions) {
         this.options = options;
         debug("irohFetch initializing", docTicket);
+        const ticket = DocTicket.fromString(docTicket);
         (async () => {
             let irohDataDir = app.getPath("appData") + "/iroh";
             mkdirSync(irohDataDir, { recursive: true });
             this.node = await Iroh.persistent(irohDataDir);
-            this.doc = await this.node.docs.join(docTicket);
+            this.doc = await this.node.docs.join(ticket);
             debug("irohFetch joined doc", this.doc.id());
             this.author = await this.node.authors.default();
             this.nodeId = await this.node.node.nodeId();
