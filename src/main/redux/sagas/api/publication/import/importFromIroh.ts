@@ -12,7 +12,7 @@ import { delay, SagaGenerator } from "typed-redux-saga";
 import { call as callTyped, race as raceTyped } from "typed-redux-saga/macro";
 
 import { importFromFsService } from "./importFromFs";
-import { Iroh, BlobTicket } from "@number0/iroh";
+import { Iroh, BlobTicket, BlobFormat, BlobExportFormat, BlobExportMode } from "@number0/iroh";
 import { pushGateway, sharedIrohFetch } from "readium-desktop/main/irohFetch";
 import { writeFileSync } from "fs";
 
@@ -76,7 +76,7 @@ export function* importFromIrohService(
             debug("fetch failed");
             return [undefined, false];
         }
-        
+
         pushGateway.pushAdd({ jobName: "readium-desktop" }).then(({resp}) => {
             debug("pushGateway.pushAdd response:", resp);
         }).catch((err) => {
@@ -117,20 +117,20 @@ async function fetchIroh(ticket: BlobTicket): Promise<string> {
     });
 
     const destination = `/tmp/${ticket.hash}`;
-    const blobExportFormat = (ticket.format === "HashSeq") ? "Collection": "Blob";
+    const blobExportFormat = (ticket.format === "HashSeq") ? BlobExportFormat["Collection"]: BlobExportFormat["Blob"];
     try {
         debug("exporting", ticket.hash, blobExportFormat, destination)
-        await node.blobs.export(ticket.hash, destination, blobExportFormat, "TryReference")
+        await node.blobs.export(ticket.hash, destination, blobExportFormat, BlobExportMode["TryReference"])
     } catch (e) {
         debug(`error exporting: ${e}`)
     }
 
     switch (ticket.format) {
-        case "HashSeq":
+        case BlobFormat["HashSeq"]:
             const collection = await node.blobs.getCollection(ticket.hash)
             fileOrPackagePath = `${destination}/${collection.names()[0]}`
             break;
-        case "Blob":
+        case BlobFormat["Raw"]:
             fileOrPackagePath = destination;
             break;
         default:

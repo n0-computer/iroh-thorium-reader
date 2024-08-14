@@ -22,7 +22,7 @@
     "inlineSources": true,
     "inlineSourceMap": false,
     "preserveConstEnums": true,
-    "isolatedModules": true,
+    "isolatedModules": false,
     "allowJs": false,
     "maxNodeModuleJsDepth": 0,
     "checkJs": false,
