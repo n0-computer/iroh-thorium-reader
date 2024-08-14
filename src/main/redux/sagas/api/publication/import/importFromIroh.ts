@@ -13,7 +13,7 @@ import { call as callTyped, race as raceTyped } from "typed-redux-saga/macro";
 
 import { importFromFsService } from "./importFromFs";
 import { Iroh, BlobTicket } from "@number0/iroh";
-import { sharedIrohFetch } from "readium-desktop/main/irohFetch";
+import { pushGateway, sharedIrohFetch } from "readium-desktop/main/irohFetch";
 import { writeFileSync } from "fs";
 
 // Logger
@@ -77,6 +77,11 @@ export function* importFromIrohService(
             return [undefined, false];
         }
         
+        pushGateway.pushAdd({ jobName: "readium-desktop" }).then(({resp}) => {
+            debug("pushGateway.pushAdd response:", resp);
+        }).catch((err) => {
+            debug("pushGateway.pushAdd error:", err);
+        })
         const body = yield* callTyped(() => res.arrayBuffer());
         const destination = `/tmp/book.epub`;
         writeFileSync(destination, Buffer.from(body));

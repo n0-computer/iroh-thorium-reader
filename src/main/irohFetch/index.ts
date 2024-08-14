@@ -1,6 +1,12 @@
+import { app } from 'electron';
+import { mkdirSync } from "fs";
 import * as debug_ from "debug";
 import fetch, { Response, ResponseInit } from "node-fetch";
 import { AuthorId, BlobDownloadOptions, Doc, DownloadPolicy, Iroh, LiveEvent, Query, SetTagOption } from "@number0/iroh";
+
+import { metrics } from "./metrics";
+
+export { pushGateway, metrics } from "./metrics";
 
 const debug = debug_("readium-desktop:main#irohFetch");
 
@@ -26,11 +32,14 @@ export class IrohFetch {
         this.options = options;
         debug("irohFetch initializing", docTicket);
         (async () => {
-            this.node = await Iroh.memory();
+            let irohDataDir = app.getPath("appData") + "/iroh";
+            mkdirSync(irohDataDir, { recursive: true });
+            this.node = await Iroh.persistent(irohDataDir);
             this.doc = await this.node.docs.join(docTicket);
+            debug("irohFetch joined doc", this.doc.id());
             this.author = await this.node.authors.default();
             this.nodeId = await this.node.node.nodeId();
-            await this.doc.setDownloadPolicy(DownloadPolicy.nothing);
+            await this.doc.setDownloadPolicy(DownloadPolicy.nothing());
             await this.doc.subscribe(this.handleDocumentEvent);
             debug("irohFetch initialized", this.nodeId);
         })();
@@ -47,6 +56,7 @@ export class IrohFetch {
 
         debug("url doesn't exist in iroh, fetching from web")
         // couldn't fetch via iroh, fall back to regular fetch
+        metrics.httpRequestCount.inc(1);
         res = await fetch(url)
 
         if (res?.ok && this.options.provide) {
@@ -64,6 +74,7 @@ export class IrohFetch {
                 Array.from(Buffer.from(`${url}${PROVIDER_SEPARATOR}${this.nodeId}`, "utf-8")),
                 Array.from(body),
             );
+            metrics.httpBytesFetched.inc(body.length);
 
             let header = IrohFetch.decodeHeader(headerBuffer);
             return new Response(body, header);
@@ -111,6 +122,7 @@ export class IrohFetch {
         const headerData = await this.getHashBuffer(headerHash, provs);
         const header = IrohFetch.decodeHeader(headerData);
         const body = await this.getHashBuffer(bodyHash, provs);
+        metrics.irohBytesFetched.inc(body.length);;
         return new Response(body, header);
     }
 
@@ -137,6 +149,7 @@ export class IrohFetch {
         debug("downloading", hash, providers.length);
         // TODO: handle multiple providers
         const downloadOptions = new BlobDownloadOptions("Raw", { nodeId: providers[0] }, SetTagOption.auto());
+        metrics.irohRequestCount.inc(1);
         return await this.node.blobs.download(hash, downloadOptions, async (err, progress) => {
             if (err) {
                 debug("download error", err);
