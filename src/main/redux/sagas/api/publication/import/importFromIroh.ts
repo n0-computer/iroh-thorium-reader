@@ -6,13 +6,17 @@
 // ==LICENSE-END==
 
 import * as debug_ from "debug";
-import { PublicationDocument } from "readium-desktop/main/db/document/publication";
-import { diMainGet } from "readium-desktop/main/di";
+import { writeFileSync } from "fs";
+import path from "path";
+import { tmpdir } from "os";
 import { delay, SagaGenerator } from "typed-redux-saga";
 import { call as callTyped, race as raceTyped } from "typed-redux-saga/macro";
+import { Iroh, BlobTicket, BlobFormat, BlobExportFormat, BlobExportMode } from "@number0/iroh";
 
-import { importFromFsService } from "./importFromFs";
-import { execSync } from "node:child_process";
+import { PublicationDocument } from "readium-desktop/main/db/document/publication";
+import { diMainGet } from "readium-desktop/main/di";
+import { pushGateway, sharedIrohFetch } from "readium-desktop/main/irohFetch";
+import { importFromFsService } from "readium-desktop/main/redux/sagas/api/publication/import/importFromFs";
 
 // Logger
 const debug = debug_("readium-desktop:main#saga/api/publication/importFromLinkService");
@@ -65,21 +69,75 @@ function* importLinkFromPath(
 }
 
 export function* importFromIrohService(
-  ticket: string,
+  ticketString: string,
 ): SagaGenerator<[publicationDocument: PublicationDocument | undefined, alreadyImported: boolean]> {
-  debug("importing ticket", ticket);
-  const command = `/Users/dignifiedquire/rust_target/debug/sendme receive ${ticket}`;
-  const res = execSync(command);
-  const out = res.toString();
-   const regex = /downloading\sto:\s([^;]+)/i;
-    const fileOrPackagePath = out.match(regex)[1];
-    debug(res, fileOrPackagePath)
-
-    if (fileOrPackagePath) {
-        return yield* callTyped(importLinkFromPath, fileOrPackagePath);
-    } else {
-        debug("downloaded file path or package path is empty");
+    if (ticketString.startsWith("http")) {
+        debug("fetching URL:", ticketString);
+        const res = yield* callTyped(() => sharedIrohFetch.fetch(ticketString));
+        if (!res) {
+            debug("fetch failed");
+            return [undefined, false];
+        }
+        
+        pushGateway.pushAdd({ jobName: "readium-desktop" }).then(() => {
+        }).catch((err) => {
+            debug("pushGateway.pushAdd error:", err.toString());
+        })
+        const body = yield* callTyped(() => res.arrayBuffer());
+        const destination = path.join(tmpdir(), "book.epub");
+        writeFileSync(destination, Buffer.from(body));
+        return yield* callTyped(importLinkFromPath, destination);
     }
 
-    return [undefined, false];
+    debug("importing ticket", ticketString);
+    const ticket = BlobTicket.fromString(ticketString)
+    if (!ticket.hash || !ticket.nodeAddr.nodeId) {
+        debug("invalid ticket, assuming it's a regular URL", ticketString);
+        return [undefined, false];
+    }
+
+    const fileOrPackagePath = yield* callTyped(fetchIroh, ticket);
+    if (!fileOrPackagePath) {
+        debug("downloaded file path or package path is empty");
+        return [undefined, false];
+    }
+    debug("fetched to", fileOrPackagePath)
+    return yield* callTyped(importLinkFromPath, fileOrPackagePath);
+}
+
+async function fetchIroh(ticket: BlobTicket): Promise<string> {
+    const node = await Iroh.memory();
+    let fileOrPackagePath = "";
+    debug("downloading", ticket.hash, ticket.asDownloadOptions());
+    await node.blobs.download(ticket.hash, ticket.asDownloadOptions(), async (err, progress) => {
+        if (err) {
+            debug("download error", err);
+            return;
+        }
+        debug("download progress", progress);
+    });
+
+    const destination = `/tmp/${ticket.hash}`;
+    const blobExportFormat = (ticket.format === BlobFormat.HashSeq) ? BlobExportFormat.Collection: BlobExportFormat.Blob;
+    try {
+        debug("exporting", ticket.hash, blobExportFormat, destination)
+        await node.blobs.export(ticket.hash, destination, blobExportFormat, BlobExportMode.TryReference)
+    } catch (e) {
+        debug(`error exporting: ${e}`)
+    }
+
+    switch (ticket.format) {
+        case BlobFormat.HashSeq:
+            const collection = await node.blobs.getCollection(ticket.hash)
+            fileOrPackagePath = `${destination}/${collection.names()[0]}`
+            break;
+        case BlobFormat.Raw:
+            fileOrPackagePath = destination;
+            break;
+        default:
+            debug("invalid ticket format", ticket.format);
+    }
+
+    debug("package path:", fileOrPackagePath)
+    return fileOrPackagePath;
 }
