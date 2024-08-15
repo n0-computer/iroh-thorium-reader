@@ -1,6 +1,6 @@
 import { Counter, Pushgateway } from 'prom-client';
 
-export const pushGateway = new Pushgateway('http://localhost:9091', { jobName: 'readium-desktop' });
+export const pushGateway = new Pushgateway('https://localhost:9091', { jobName: 'readium-desktop' });
 
 export const metrics = {
     httpBytesFetched: new Counter({

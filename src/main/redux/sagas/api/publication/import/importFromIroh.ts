@@ -10,11 +10,11 @@ import { PublicationDocument } from "readium-desktop/main/db/document/publicatio
 import { diMainGet } from "readium-desktop/main/di";
 import { delay, SagaGenerator } from "typed-redux-saga";
 import { call as callTyped, race as raceTyped } from "typed-redux-saga/macro";
-
-import { importFromFsService } from "./importFromFs";
 import { Iroh, BlobTicket, BlobFormat, BlobExportFormat, BlobExportMode } from "@number0/iroh";
 import { pushGateway, sharedIrohFetch } from "readium-desktop/main/irohFetch";
 import { writeFileSync } from "fs";
+
+import { importFromFsService } from "./importFromFs";
 
 // Logger
 const debug = debug_("readium-desktop:main#saga/api/publication/importFromLinkService");
@@ -76,9 +76,8 @@ export function* importFromIrohService(
             debug("fetch failed");
             return [undefined, false];
         }
-
-        pushGateway.pushAdd({ jobName: "readium-desktop" }).then(({resp}) => {
-            debug("pushGateway.pushAdd response:", resp);
+        
+        pushGateway.pushAdd({ jobName: "readium-desktop" }).then(() => {
         }).catch((err) => {
             debug("pushGateway.pushAdd error:", err);
         })
@@ -117,20 +116,20 @@ async function fetchIroh(ticket: BlobTicket): Promise<string> {
     });
 
     const destination = `/tmp/${ticket.hash}`;
-    const blobExportFormat = (ticket.format === "HashSeq") ? BlobExportFormat["Collection"]: BlobExportFormat["Blob"];
+    const blobExportFormat = (ticket.format === BlobFormat.HashSeq) ? BlobExportFormat.Collection: BlobExportFormat.Blob;
     try {
         debug("exporting", ticket.hash, blobExportFormat, destination)
-        await node.blobs.export(ticket.hash, destination, blobExportFormat, BlobExportMode["TryReference"])
+        await node.blobs.export(ticket.hash, destination, blobExportFormat, BlobExportMode.TryReference)
     } catch (e) {
         debug(`error exporting: ${e}`)
     }
 
     switch (ticket.format) {
-        case BlobFormat["HashSeq"]:
+        case BlobFormat.HashSeq:
             const collection = await node.blobs.getCollection(ticket.hash)
             fileOrPackagePath = `${destination}/${collection.names()[0]}`
             break;
-        case BlobFormat["Raw"]:
+        case BlobFormat.Raw:
             fileOrPackagePath = destination;
             break;
         default:

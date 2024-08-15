@@ -2,7 +2,7 @@ import { app } from 'electron';
 import { mkdirSync } from "fs";
 import * as debug_ from "debug";
 import fetch, { Response, ResponseInit } from "node-fetch";
-import { AuthorId, BlobDownloadOptions, Doc, DocTicket, DownloadPolicy, Iroh, LiveEvent, Query, SetTagOption, BlobFormat } from "@number0/iroh";
+import { AuthorId, BlobDownloadOptions, BlobFormat, Doc, DocTicket, DownloadPolicy, Iroh, LiveEvent, Query, SetTagOption } from "@number0/iroh";
 
 import { metrics } from "./metrics";
 
@@ -149,7 +149,7 @@ export class IrohFetch {
     private async getHash(hash: string, providers: string[]): Promise<void> {
         debug("downloading", hash, providers.length);
         // TODO: handle multiple providers
-        const downloadOptions = new BlobDownloadOptions(BlobFormat["Raw"], { nodeId: providers[0] }, SetTagOption.auto());
+        const downloadOptions = new BlobDownloadOptions(BlobFormat.Raw, { nodeId: providers[0] }, SetTagOption.auto());
         metrics.irohRequestCount.inc(1);
         return await this.node.blobs.download(hash, downloadOptions, async (err, progress) => {
             if (err) {
