@@ -6,15 +6,17 @@
 // ==LICENSE-END==
 
 import * as debug_ from "debug";
-import { PublicationDocument } from "readium-desktop/main/db/document/publication";
-import { diMainGet } from "readium-desktop/main/di";
+import { writeFileSync } from "fs";
+import path from "path";
+import { tmpdir } from "os";
 import { delay, SagaGenerator } from "typed-redux-saga";
 import { call as callTyped, race as raceTyped } from "typed-redux-saga/macro";
 import { Iroh, BlobTicket, BlobFormat, BlobExportFormat, BlobExportMode } from "@number0/iroh";
-import { pushGateway, sharedIrohFetch } from "readium-desktop/main/irohFetch";
-import { writeFileSync } from "fs";
 
-import { importFromFsService } from "./importFromFs";
+import { PublicationDocument } from "readium-desktop/main/db/document/publication";
+import { diMainGet } from "readium-desktop/main/di";
+import { pushGateway, sharedIrohFetch } from "readium-desktop/main/irohFetch";
+import { importFromFsService } from "readium-desktop/main/redux/sagas/api/publication/import/importFromFs";
 
 // Logger
 const debug = debug_("readium-desktop:main#saga/api/publication/importFromLinkService");
@@ -79,10 +81,10 @@ export function* importFromIrohService(
         
         pushGateway.pushAdd({ jobName: "readium-desktop" }).then(() => {
         }).catch((err) => {
-            debug("pushGateway.pushAdd error:", err);
+            debug("pushGateway.pushAdd error:", err.toString());
         })
         const body = yield* callTyped(() => res.arrayBuffer());
-        const destination = `/tmp/book.epub`;
+        const destination = path.join(tmpdir(), "book.epub");
         writeFileSync(destination, Buffer.from(body));
         return yield* callTyped(importLinkFromPath, destination);
     }
