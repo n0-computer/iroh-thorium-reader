@@ -2,7 +2,7 @@ import { app } from 'electron';
 import { mkdirSync } from "fs";
 import * as debug_ from "debug";
 import fetch, { Response, ResponseInit } from "node-fetch";
-import { AuthorId, BlobDownloadOptions, BlobFormat, Doc, DocTicket, DownloadPolicy, Iroh, LiveEvent, Query, SetTagOption } from "@number0/iroh";
+import { AuthorId, BlobDownloadOptions, BlobFormat, Doc, DocTicket, DownloadPolicy, DownloadProgress, Iroh, LiveEvent, Query, SetTagOption } from "@number0/iroh";
 import base32Encode from 'base32-encode'
 
 import { metrics } from "./metrics";
@@ -49,11 +49,16 @@ export class IrohFetch {
 
     public async fetch(url: string): Promise<Response> {
         debug("fetch", url);
+        let res
         // check the document for providers of this URL
-        let res = await this.fetchIroh(url);
-        if (res !== null) {
-            debug("returning response fetched from iroh!", url);
-            return res;
+        try {
+            res = await this.fetchIroh(url);
+            if (res !== null) {
+                debug("returning response fetched from iroh", url);
+                return res;
+            }
+        } catch (e) {
+            debug("error fetching from iroh", e);
         }
 
         debug("url doesn't exist in iroh, fetching from web")
@@ -117,11 +122,11 @@ export class IrohFetch {
         
         const [headerHash, bodyHash] = await this.urlHash(url);
         if (headerHash === "" || bodyHash === "") {
+            debug("url not found in iroh", url);
             return null;
         }
 
         const providers = await this.possibleProviders();
-
         const headerData = await this.getHashBuffer(headerHash, providers);
         const header = IrohFetch.decodeHeader(headerData);
         const body = await this.getHashBuffer(bodyHash, providers);
@@ -130,7 +135,8 @@ export class IrohFetch {
     }
 
     private async getHashBuffer(hash: string, providers: string[]): Promise<Buffer> {
-        await this.getHash(hash, providers);
+        const provider = await this.getHash(hash, providers);
+        debug(`fetched hash ${hash} from provider ${provider}`);
         const array = await this.node.blobs.readToBytes(hash)
         return Buffer.from(array);
     }
@@ -148,23 +154,23 @@ export class IrohFetch {
     //     return destination;
     // }
 
-    private async getHash(hash: string, providers: string[]): Promise<void> {
+    private async getHash(hash: string, providers: string[]): Promise<string> {
         debug(`asking ${providers.length} providers to get ${hash}`);
-        // TODO: maybe don't race _everyone_?
         return Promise.race(providers.map((provider) => this.downloadBlob(hash, provider)));
     }
 
-    private async downloadBlob(hash: string, provider: string): Promise<void> {
+    private async downloadBlob(hash: string, provider: string): Promise<string> {
         debug("downloadBlob", hash, provider);
         const downloadOptions = new BlobDownloadOptions(BlobFormat.Raw, { nodeId: provider }, SetTagOption.auto());
-        metrics.irohRequestCount.inc(1);
-        return await this.node.blobs.download(hash, downloadOptions, (err, progress) => {
+        // metrics.irohRequestCount.inc(1);
+        await this.node.blobs.download(hash, downloadOptions, (err, progress) => {
             if (err) {
-                debug("download error", err);
-                return;
+                debug(`download ${hash} from ${provider} error`, err);
+            } else {
+                debug("download progress", provider, downloadProgressType(progress));
             }
-            debug("download progress", progress);
         });
+        return provider
     }
 
     private async urlHash(url: string): Promise<[string, string]> {
@@ -198,19 +204,41 @@ export class IrohFetch {
             debug("document error", err);
             return;
         }
-        debug("document event", IrohFetch.eventType(arg));
+        debug("document event", liveEventType(arg));
     }
 
-    private static eventType(arg: LiveEvent): LiveEventType {
-        if (arg.contentReady) { return LiveEventType.contentReady; }
-        else if (arg.insertLocal) { return LiveEventType.insertLocal; }
-        else if (arg.insertRemote) { return LiveEventType.insertRemote; }
-        else if (arg.neighborUp) { return LiveEventType.neighborUp; }
-        else if (arg.neighborDown) { return LiveEventType.neighborDown; }
-        else if (arg.syncFinished) { return LiveEventType.syncFinished; }
-        else if (arg.pendingContentReady === true) { return LiveEventType.contentReady; }
-        return LiveEventType.unknown;
-    }
+}
+
+enum DownloadProgressType {
+    unknown = "unknown",
+    /** Initial state if subscribing to a running or queued transfer. */
+    initialState = "initialState",
+    /** A new connection was established. */
+    connected = "connected",
+    /** An item was found with hash `hash`, from now on referred to via `id` */
+    found = "found",
+    /** Data was found locally */
+    foundLocal = "foundLocal",
+    /** An item was found with hash `hash`, from now on referred to via `id` */
+    foundHashSeq = "foundHashSeq",
+    /** We got progress ingesting item `id`. */
+    progress = "progress",
+    /** We are done with `id`, and the hash is `hash`. */
+    done =  "downloadProgressDone",
+    /** We are done with the whole operation. */
+    allDone = "allDone"
+}
+
+function downloadProgressType(arg: DownloadProgress): DownloadProgressType {
+    if (arg.initialState) { return DownloadProgressType.initialState; }
+    else if (arg.connected) { return DownloadProgressType.connected; }
+    else if (arg.found) { return DownloadProgressType.found; }
+    else if (arg.foundLocal) { return DownloadProgressType.foundLocal; }
+    else if (arg.foundHashSeq) { return DownloadProgressType.foundHashSeq; }
+    else if (arg.progress) { return DownloadProgressType.progress; }
+    else if (arg.done) { return DownloadProgressType.done; }
+    else if (arg.allDone) { return DownloadProgressType.allDone; }
+    else { return DownloadProgressType.unknown; }
 }
 
 enum LiveEventType {
@@ -221,6 +249,17 @@ enum LiveEventType {
     neighborUp = "neighborUp",
     neighborDown = "neighborDown",
     syncFinished = "syncFinished",
+}
+
+function liveEventType(arg: LiveEvent): LiveEventType {
+    if (arg.contentReady) { return LiveEventType.contentReady; }
+    else if (arg.insertLocal) { return LiveEventType.insertLocal; }
+    else if (arg.insertRemote) { return LiveEventType.insertRemote; }
+    else if (arg.neighborUp) { return LiveEventType.neighborUp; }
+    else if (arg.neighborDown) { return LiveEventType.neighborDown; }
+    else if (arg.syncFinished) { return LiveEventType.syncFinished; }
+    else if (arg.pendingContentReady === true) { return LiveEventType.contentReady; }
+    return LiveEventType.unknown;
 }
 
 // a demo ticket for testing, hosted on iroh.network
