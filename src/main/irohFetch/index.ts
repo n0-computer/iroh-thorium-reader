@@ -3,6 +3,7 @@ import { mkdirSync } from "fs";
 import * as debug_ from "debug";
 import fetch, { Response, ResponseInit } from "node-fetch";
 import { AuthorId, BlobDownloadOptions, BlobFormat, Doc, DocTicket, DownloadPolicy, Iroh, LiveEvent, Query, SetTagOption } from "@number0/iroh";
+import base32Encode from 'base32-encode'
 
 import { metrics } from "./metrics";
 
@@ -47,11 +48,11 @@ export class IrohFetch {
     }
 
     public async fetch(url: string): Promise<Response> {
-        debug("fetching", url, this);
+        debug("fetch", url);
         // check the document for providers of this URL
         let res = await this.fetchIroh(url);
         if (res !== null) {
-            debug("returning response fetched from iroh", url);
+            debug("returning response fetched from iroh!", url);
             return res;
         }
 
@@ -113,17 +114,18 @@ export class IrohFetch {
     // Recreate a Response object from a header buffer and a body buffer stored in iroh
     private async fetchIroh(url: string): Promise<Response | null> {
         debug("fetching from iroh", url);
-        const res = await this.providers(url);
-        if (res === null) {
+        
+        const [headerHash, bodyHash] = await this.urlHash(url);
+        if (headerHash === "" || bodyHash === "") {
             return null;
         }
 
-        const [headerHash, bodyHash, provs] = res;
-        debug(`found ${provs.length} providers for ${url}`);
-        const headerData = await this.getHashBuffer(headerHash, provs);
+        const providers = await this.possibleProviders();
+
+        const headerData = await this.getHashBuffer(headerHash, providers);
         const header = IrohFetch.decodeHeader(headerData);
-        const body = await this.getHashBuffer(bodyHash, provs);
-        metrics.irohBytesFetched.inc(body.length);;
+        const body = await this.getHashBuffer(bodyHash, providers);
+        metrics.irohBytesFetched.inc(body.length);
         return new Response(body, header);
     }
 
@@ -147,11 +149,16 @@ export class IrohFetch {
     // }
 
     private async getHash(hash: string, providers: string[]): Promise<void> {
-        debug("downloading", hash, providers.length);
-        // TODO: handle multiple providers
-        const downloadOptions = new BlobDownloadOptions(BlobFormat.Raw, { nodeId: providers[0] }, SetTagOption.auto());
+        debug(`asking ${providers.length} providers to get ${hash}`);
+        // TODO: maybe don't race _everyone_?
+        return Promise.race(providers.map((provider) => this.downloadBlob(hash, provider)));
+    }
+
+    private async downloadBlob(hash: string, provider: string): Promise<void> {
+        debug("downloadBlob", hash, provider);
+        const downloadOptions = new BlobDownloadOptions(BlobFormat.Raw, { nodeId: provider }, SetTagOption.auto());
         metrics.irohRequestCount.inc(1);
-        return await this.node.blobs.download(hash, downloadOptions, async (err, progress) => {
+        return await this.node.blobs.download(hash, downloadOptions, (err, progress) => {
             if (err) {
                 debug("download error", err);
                 return;
@@ -160,39 +167,60 @@ export class IrohFetch {
         });
     }
 
-    private async providers(url: string): Promise<any[] | null> {
-        // check headers for hash presence
-        debug("checking providers for", url);
+    private async urlHash(url: string): Promise<[string, string]> {
+        // get header hash
         let headerKey = Buffer.from(`${HEADER_PREFIX}${PROVIDER_SEPARATOR}${url}`, "utf-8");
         let query = Query.keyPrefix(Array.from(headerKey));
         let headerEntry = await this.doc.getOne(query);
         if (headerEntry === null) {
-            return null;
+            return ["", ""];
         }
+        const headerHash = headerEntry.hash;
 
         const buffer = Buffer.from(url, "utf-8");
         query = Query.keyPrefix(Array.from(buffer));
         let entries = await this.doc.getMany(query)
-        let hash = "";
-        const providers = entries.map((entry) => {
-            hash = entry.hash;
-            const keyComponents = Buffer.from(entry.key).toString("utf-8").split(PROVIDER_SEPARATOR)
-            if (keyComponents.length !== 2) {
-                return "";
-            }
-            return keyComponents[1];
-        }).filter((entry) => entry !== "");
-
-        return [headerEntry.hash, hash, providers];
+        if (entries.length === 0) {
+            return ["", ""];
+        }
+        return [headerHash, entries[0].hash];
     }
 
-    private handleDocumentEvent(err: Error, arg: LiveEvent) {
+    private async possibleProviders(): Promise<string[]> {
+        // this is the list of online peers you're already connected to
+        return (await this.doc.getSyncPeers()).map((peer) => {
+            return base32Encode(new Uint8Array(peer), 'RFC4648', { padding: false }).toLowerCase()
+        })
+    }
+
+    private async handleDocumentEvent(err: Error, arg: LiveEvent) {
         if (err) {
             debug("document error", err);
             return;
         }
-        debug("document event", arg);
+        debug("document event", IrohFetch.eventType(arg));
     }
+
+    private static eventType(arg: LiveEvent): LiveEventType {
+        if (arg.contentReady) { return LiveEventType.contentReady; }
+        else if (arg.insertLocal) { return LiveEventType.insertLocal; }
+        else if (arg.insertRemote) { return LiveEventType.insertRemote; }
+        else if (arg.neighborUp) { return LiveEventType.neighborUp; }
+        else if (arg.neighborDown) { return LiveEventType.neighborDown; }
+        else if (arg.syncFinished) { return LiveEventType.syncFinished; }
+        else if (arg.pendingContentReady === true) { return LiveEventType.contentReady; }
+        return LiveEventType.unknown;
+    }
+}
+
+enum LiveEventType {
+    unknown = "unknown",
+    insertLocal = "insertLocal",
+    insertRemote = "insertRemote",
+    contentReady = "contentReady",
+    neighborUp = "neighborUp",
+    neighborDown = "neighborDown",
+    syncFinished = "syncFinished",
 }
 
 // a demo ticket for testing, hosted on iroh.network
