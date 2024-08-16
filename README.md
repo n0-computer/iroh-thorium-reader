@@ -6,7 +6,7 @@ To run this you will need:
 - 
 
 ## Setup
-- clone thie repo & `cd iroh-throium`
+- clone this repo & `cd iroh-thorium-reader`
 - `npm install`
 - `npm run start:dev`
 - once the app is open:
