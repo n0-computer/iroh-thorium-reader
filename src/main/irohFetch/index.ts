@@ -2,10 +2,10 @@ import { app } from 'electron';
 import { mkdirSync } from "fs";
 import * as debug_ from "debug";
 import fetch, { Response, ResponseInit } from "node-fetch";
-import { AuthorId, BlobDownloadOptions, BlobFormat, Doc, DocTicket, DownloadPolicy, DownloadProgress, Iroh, LiveEvent, Query, SetTagOption } from "@number0/iroh";
+import { AddrInfoOptions, AuthorId, BlobDownloadOptions, BlobFormat, BlobProvideEvent, Doc, DocTicket, DownloadPolicy, DownloadProgress, Iroh, LiveEvent, Query, SetTagOption, ShareMode } from "@number0/iroh";
 import base32Encode from 'base32-encode'
 
-import { metrics } from "./metrics";
+import { metrics, postDeviceDetails, postProvide, postRequestData } from "./metrics";
 
 export { pushGateway, metrics } from "./metrics";
 
@@ -23,32 +23,45 @@ const defaultOptions: IrohFetchOptions = {
 }
 
 export class IrohFetch {
+    private ticket: DocTicket;
+    private spawned: boolean = false;
+
     private options: IrohFetchOptions;
     private node: Iroh;
     private doc: Doc;
     private nodeId: string;
     private author: AuthorId;
 
+    private provides: Map<string, string> = new Map();
+
     constructor(docTicket: string, options: IrohFetchOptions = defaultOptions) {
         this.options = options;
-        debug("irohFetch initializing", docTicket);
-        const ticket = DocTicket.fromString(docTicket);
-        (async () => {
-            let irohDataDir = app.getPath("appData") + "/iroh";
-            mkdirSync(irohDataDir, { recursive: true });
-            this.node = await Iroh.persistent(irohDataDir);
-            this.doc = await this.node.docs.join(ticket);
-            debug("irohFetch joined doc", this.doc.id());
-            this.author = await this.node.authors.default();
-            this.nodeId = await this.node.node.nodeId();
-            await this.doc.setDownloadPolicy(DownloadPolicy.nothing());
-            await this.doc.subscribe(this.handleDocumentEvent);
-            debug("irohFetch initialized", this.nodeId);
-        })();
+        this.ticket = DocTicket.fromString(docTicket);
     }
+
+    public async spawn() {
+        let irohDataDir = app.getPath("appData") + "/thorium-reader/iroh";
+        mkdirSync(irohDataDir, { recursive: true });
+        
+        this.node = await Iroh.persistent(irohDataDir, { blobEvents: (e,a) => { this.handleBlobEvent(e,a) } });
+        this.author = await this.node.authors.default();
+        this.nodeId = await this.node.net.nodeId();
+        
+        this.doc = await this.node.docs.join(this.ticket);
+        await this.doc.setDownloadPolicy(DownloadPolicy.nothing());
+        await this.doc.subscribe((e,a) => { this.handleDocumentEvent(e,a) });
+        debug(`irohFetch initialized ${this.nodeId}, joined doc: ${this.doc.id()}`);
+        let ticket = await this.doc.share(ShareMode.Write, AddrInfoOptions.Id);
+        console.log(`shared ticket: ${ticket.toString()}`);
+        this.spawned = true;
+    }
+    
 
     public async fetch(url: string): Promise<Response> {
         debug("fetch", url);
+        if (!this.spawned) {
+            throw new Error("IrohFetch not spawned");
+        }
         let res
         // check the document for providers of this URL
         try {
@@ -65,6 +78,9 @@ export class IrohFetch {
         // couldn't fetch via iroh, fall back to regular fetch
         metrics.httpRequestCount.inc(1);
         res = await fetch(url)
+        if (res.ok) {
+            await postRequestData(this.nodeId, 0, "Https", "Success", "", res.headers.get("Content-Length") ? parseInt(res.headers.get("content-length")!) : 0);
+        }
 
         if (res?.ok && this.options.provide) {
             debug("fetched from web, adding to iroh", url);
@@ -82,7 +98,6 @@ export class IrohFetch {
                 Array.from(body),
             );
             metrics.httpBytesFetched.inc(body.length);
-
             let header = IrohFetch.decodeHeader(headerBuffer);
             return new Response(body, header);
         }
@@ -131,12 +146,12 @@ export class IrohFetch {
         const header = IrohFetch.decodeHeader(headerData);
         const body = await this.getHashBuffer(bodyHash, providers);
         metrics.irohBytesFetched.inc(body.length);
+        await postRequestData(this.nodeId, 0, "Iroh", "Success", bodyHash, body.length);
         return new Response(body, header);
     }
 
     private async getHashBuffer(hash: string, providers: string[]): Promise<Buffer> {
-        const provider = await this.getHash(hash, providers);
-        debug(`fetched hash ${hash} from provider ${provider}`);
+        await this.downloadBlob(hash, providers);
         const array = await this.node.blobs.readToBytes(hash)
         return Buffer.from(array);
     }
@@ -154,23 +169,18 @@ export class IrohFetch {
     //     return destination;
     // }
 
-    private async getHash(hash: string, providers: string[]): Promise<string> {
+    private async downloadBlob(hash: string, providers: string[]) {
         debug(`asking ${providers.length} providers to get ${hash}`);
-        return Promise.race(providers.map((provider) => this.downloadBlob(hash, provider)));
-    }
-
-    private async downloadBlob(hash: string, provider: string): Promise<string> {
-        debug("downloadBlob", hash, provider);
-        const downloadOptions = new BlobDownloadOptions(BlobFormat.Raw, { nodeId: provider }, SetTagOption.auto());
+        // return Promise.race(providers.map((provider) => this.downloadBlob(hash, provider)));
+        const downloadOptions = new BlobDownloadOptions(BlobFormat.Raw, providers.map((nodeId) => ({ nodeId })), SetTagOption.auto());
         // metrics.irohRequestCount.inc(1);
         await this.node.blobs.download(hash, downloadOptions, (err, progress) => {
             if (err) {
-                debug(`download ${hash} from ${provider} error`, err);
+                debug(`download ${hash} error`, err);
             } else {
-                debug("download progress", provider, downloadProgressType(progress));
+                debug("download progress", downloadProgressType(progress));
             }
         });
-        return provider
     }
 
     private async urlHash(url: string): Promise<[string, string]> {
@@ -194,9 +204,50 @@ export class IrohFetch {
 
     private async possibleProviders(): Promise<string[]> {
         // this is the list of online peers you're already connected to
-        return (await this.doc.getSyncPeers()).map((peer) => {
+        const peers = await this.doc.getSyncPeers();
+        if (peers === null)  {
+            return []
+        }
+
+        return peers.map((peer) => {
             return base32Encode(new Uint8Array(peer), 'RFC4648', { padding: false }).toLowerCase()
         })
+    }
+
+    private async localBlobs(): Promise<[string[], string[]]> {
+        const entries = await this.doc.getMany(Query.all())
+        const entriesMap = entries.reduce((acc: Map<string, boolean>, entry) => acc.set(entry.hash, true), new Map())
+
+        let completeHashes = await this.node.blobs.list();
+        completeHashes = completeHashes.filter((h) => entriesMap.get(h.toString()))
+        let incompleteHashes = await this.node.blobs.listIncomplete();
+        incompleteHashes = incompleteHashes.filter((h) => entriesMap.get(h.toString()))
+
+        return [
+            completeHashes.map((h) => h.toString()),
+            incompleteHashes.map((h) => h.toString())
+        ]
+    }
+
+    private async handleBlobEvent(err: Error | null, arg: BlobProvideEvent) {
+        if (err) {
+            debug("blob error", err);
+            return;
+        }
+        debug("blob event", arg);
+        if (arg.getRequestReceived) {
+            let event = arg.getRequestReceived;
+            this.provides.set(event.requestId.toString(), event.hash);
+        }
+        else if (arg.transferCompleted) {
+            let event = arg.transferCompleted;
+            let hash = this.provides.get(event.requestId.toString());
+            if (hash) {
+                debug(`transfer completed for ${hash}`);
+                await postProvide(this.nodeId, Number(event.stats.duration), "Success", hash, 0);
+                this.provides.delete(event.requestId.toString());
+            }
+        }
     }
 
     private async handleDocumentEvent(err: Error, arg: LiveEvent) {
@@ -204,7 +255,26 @@ export class IrohFetch {
             debug("document error", err);
             return;
         }
-        debug("document event", liveEventType(arg));
+        let type = liveEventType(arg);
+        switch (type) {
+            case LiveEventType.syncFinished:
+                let entries = await this.doc.getMany(Query.all()).catch((e) => {
+                    debug("error getting entries", e);
+                    return [];
+                });
+                debug(`sync finished. Document has ${entries.length} entries`);
+                const [completeHashes, incompleteHashes] = await this.localBlobs()
+                await postDeviceDetails({
+                    nodeId: this.nodeId,
+                    timestamp: new Date(),
+                    deviceCategory: 'Desktop',
+                    completeHashes,
+                    incompleteHashes,
+                })
+                break;
+            default:
+                debug("document event", liveEventType(arg));
+        }
     }
 
 }
@@ -268,3 +338,11 @@ const DEMO_DOC_TICKET = "docaaacbyheqs6iy4mn7lehp5yg3v3zfk2iylmwzr2gwgfh5m7akhwb
 // a shared instance of IrohFetch for use in the app, in the real world this should be
 // created on app startup and shared throughout the app
 export const sharedIrohFetch = new IrohFetch(DEMO_DOC_TICKET);
+
+(async () => {
+    try {
+        await sharedIrohFetch.spawn();
+    } catch (e) {
+        debug("error initializing sharedIrohFetch", e);
+    }
+})()

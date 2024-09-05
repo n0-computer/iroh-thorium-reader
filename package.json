@@ -259,7 +259,7 @@
     }
   },
   "dependencies": {
-    "@number0/iroh": "^0.22.1-test4",
+    "@number0/iroh": "^0.23.0",
     "@radix-ui/react-alert-dialog": "^1.1.1",
     "@radix-ui/react-dialog": "^1.1.1",
     "@radix-ui/react-popover": "^1.1.1",
