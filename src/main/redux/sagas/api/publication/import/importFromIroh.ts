@@ -82,7 +82,7 @@ export function* importFromIrohService(
         pushGateway.pushAdd({ jobName: "readium-desktop" }).then(() => {
         }).catch((err) => {
             debug("pushGateway.pushAdd error:", err.toString());
-        })
+        });
         const body = yield* callTyped(() => res.arrayBuffer());
         const destination = path.join(tmpdir(), "book.epub");
         writeFileSync(destination, Buffer.from(body));
@@ -90,7 +90,7 @@ export function* importFromIrohService(
     }
 
     debug("importing ticket", ticketString);
-    const ticket = BlobTicket.fromString(ticketString)
+    const ticket = BlobTicket.fromString(ticketString);
     if (!ticket.hash || !ticket.nodeAddr.nodeId) {
         debug("invalid ticket, assuming it's a regular URL", ticketString);
         return [undefined, false];
@@ -101,7 +101,7 @@ export function* importFromIrohService(
         debug("downloaded file path or package path is empty");
         return [undefined, false];
     }
-    debug("fetched to", fileOrPackagePath)
+    debug("fetched to", fileOrPackagePath);
     return yield* callTyped(importLinkFromPath, fileOrPackagePath);
 }
 
@@ -120,16 +120,16 @@ async function fetchIroh(ticket: BlobTicket): Promise<string> {
     const destination = `/tmp/${ticket.hash}`;
     const blobExportFormat = (ticket.format === BlobFormat.HashSeq) ? BlobExportFormat.Collection: BlobExportFormat.Blob;
     try {
-        debug("exporting", ticket.hash, blobExportFormat, destination)
-        await node.blobs.export(ticket.hash, destination, blobExportFormat, BlobExportMode.TryReference)
+        debug("exporting", ticket.hash, blobExportFormat, destination);
+        await node.blobs.export(ticket.hash, destination, blobExportFormat, BlobExportMode.TryReference);
     } catch (e) {
-        debug(`error exporting: ${e}`)
+        debug(`error exporting: ${e}`);
     }
 
     switch (ticket.format) {
         case BlobFormat.HashSeq:
-            const collection = await node.blobs.getCollection(ticket.hash)
-            fileOrPackagePath = `${destination}/${collection.names()[0]}`
+            const collection = await node.blobs.getCollection(ticket.hash);
+            fileOrPackagePath = `${destination}/${collection.names()[0]}`;
             break;
         case BlobFormat.Raw:
             fileOrPackagePath = destination;
@@ -138,6 +138,6 @@ async function fetchIroh(ticket: BlobTicket): Promise<string> {
             debug("invalid ticket format", ticket.format);
     }
 
-    debug("package path:", fileOrPackagePath)
+    debug("package path:", fileOrPackagePath);
     return fileOrPackagePath;
 }
