@@ -69,7 +69,7 @@ const _externalsCache = new Set();
 if (nodeEnv !== "production") {
     const nodeExternals = require("webpack-node-externals");
     const neFunc = nodeExternals({
-        allowlist: ["timeout-signal", "nanoid", "normalize-url", "node-fetch", "data-uri-to-buffer", /^fetch-blob/, /^formdata-polyfill/, /^@number0\/iroh/],
+        allowlist: ["timeout-signal", "nanoid", "normalize-url", "node-fetch", "data-uri-to-buffer", /^fetch-blob/, /^formdata-polyfill/, /^@number0/],
         importType: function (moduleName) {
             if (!_externalsCache.has(moduleName)) {
                 console.log(`WEBPACK EXTERNAL (MAIN): [${moduleName}]`);

@@ -161,8 +161,8 @@
     ],
     "extraResources": [
       {
-        "from": "node_modules/@number0/iroh",
-        "to": "node_modules/@number0/iroh",
+        "from": "node_modules/@number0",
+        "to": "node_modules/@number0",
         "filter": ["**/*"]
       }
     ],
