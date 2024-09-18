@@ -159,9 +159,18 @@
       "package.json",
       "fonts"
     ],
+    "extraResources": [
+      {
+        "from": "node_modules/@number0/iroh",
+        "to": "node_modules/@number0/iroh",
+        "filter": ["**/*"]
+      }
+    ],
+    "asar": true,
     "asarUnpack": [
       "**/*.node",
-      "**/lcp.node"
+      "**/lcp.node",
+      "**/node_modules/@number0/iroh/**/*"
     ],
     "directories": {
       "buildResources": "resources",
