@@ -40,12 +40,36 @@ let externals = {
     "remote-redux-devtools": "remote-redux-devtools",
     electron: "electron",
     yargs: "yargs",
+    "bufferutil": "bufferutil",
+    "utf-8-validate": "utf-8-validate",
+    
+    // Dynamically exclude @number0/iroh native bindings for different platforms
+    "@number0/iroh": "commonjs @number0/iroh", // The main module is treated as a commonjs module
+
+    // Specify exclusions for all the platform-specific binaries
+    "@number0/iroh-android-arm64": "commonjs @number0/iroh-android-arm64",
+    "@number0/iroh-android-arm-eabi": "commonjs @number0/iroh-android-arm-eabi",
+    "@number0/iroh-win32-x64-msvc": "commonjs @number0/iroh-win32-x64-msvc",
+    "@number0/iroh-win32-ia32-msvc": "commonjs @number0/iroh-win32-ia32-msvc",
+    "@number0/iroh-win32-arm64-msvc": "commonjs @number0/iroh-win32-arm64-msvc",
+    "@number0/iroh-darwin-universal": "commonjs @number0/iroh-darwin-universal",
+    "@number0/iroh-darwin-x64": "commonjs @number0/iroh-darwin-x64",
+    "@number0/iroh-darwin-arm64": "commonjs @number0/iroh-darwin-arm64",
+    "@number0/iroh-freebsd-x64": "commonjs @number0/iroh-freebsd-x64",
+    "@number0/iroh-freebsd-arm64": "commonjs @number0/iroh-freebsd-arm64",
+    "@number0/iroh-linux-x64-musl": "commonjs @number0/iroh-linux-x64-musl",
+    "@number0/iroh-linux-x64-gnu": "commonjs @number0/iroh-linux-x64-gnu",
+    "@number0/iroh-linux-arm64-musl": "commonjs @number0/iroh-linux-arm64-musl",
+    "@number0/iroh-linux-arm64-gnu": "commonjs @number0/iroh-linux-arm64-gnu",
+    "@number0/iroh-linux-arm-musleabihf": "commonjs @number0/iroh-linux-arm-musleabihf",
+    "@number0/iroh-linux-arm-gnueabihf": "commonjs @number0/iroh-linux-arm-gnueabihf",
+    "@number0/iroh-linux-riscv64-musl": "commonjs @number0/iroh-linux-riscv64-musl"
 };
 const _externalsCache = new Set();
 if (nodeEnv !== "production") {
     const nodeExternals = require("webpack-node-externals");
     const neFunc = nodeExternals({
-        allowlist: ["timeout-signal", "nanoid", "normalize-url", "node-fetch", "data-uri-to-buffer", /^fetch-blob/, /^formdata-polyfill/],
+        allowlist: ["timeout-signal", "nanoid", "normalize-url", "node-fetch", "data-uri-to-buffer", /^fetch-blob/, /^formdata-polyfill/, /^@number0/],
         importType: function (moduleName) {
             if (!_externalsCache.has(moduleName)) {
                 console.log(`WEBPACK EXTERNAL (MAIN): [${moduleName}]`);
@@ -122,7 +146,7 @@ let config = Object.assign(
         },
 
         externalsPresets: { node: true },
-        externals: externals,
+        externals,
         externalsType: "commonjs", // module, node-commonjs
         experiments: {
             outputModule: false, // module, node-commonjs
@@ -169,6 +193,9 @@ let config = Object.assign(
             ],
         },
         plugins: [
+            new webpack.IgnorePlugin({
+                resourceRegExp: /iroh\.(android-arm64|android-arm-eabi)\.node$/
+            }),
             new BundleAnalyzerPlugin({
                 analyzerMode: "disabled",
                 defaultSizes: "stat", // "parsed"

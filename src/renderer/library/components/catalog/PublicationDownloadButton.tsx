@@ -37,7 +37,7 @@ export class PublicationDownloadButton extends React.Component<IProps, {ticket: 
     this.handleChange = this.handleChange.bind(this);
     this.handleSubmit = this.handleSubmit.bind(this);
     this.state = {
-      ticket: ""
+      ticket: "",
     };
   }
 
@@ -90,7 +90,7 @@ export class PublicationDownloadButton extends React.Component<IProps, {ticket: 
 
   private handleChange(event: React.ChangeEvent<HTMLInputElement>) {
     this.setState({
-      ticket: event.target.value
+      ticket: event.target.value,
     });
   }
 
